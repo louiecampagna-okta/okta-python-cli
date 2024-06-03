@@ -12,7 +12,7 @@ loop = asyncio.get_event_loop()
 
 oktaOrgUrl = ""
 clientId = ""
-client = None
+client = OktaClient()
 
 
 def create_parser():
