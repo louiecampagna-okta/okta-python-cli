@@ -32,18 +32,40 @@ class OktaCLI(cmd.Cmd):
         """List objects in your org; valid options are users, groups, or apps"""
 
         async def run():
-            if line == "users":
-                users, resp, error = await client.list_users()
+            if line == "user all":
+                query_parameters = {'limit': '200'}
+                users, resp, err = await client.list_users(query_parameters)
 
-                for user in users:
-                    print(user.profile.first_name, user.profile.last_name)
-            elif line == "apps":
+                list_users = True
+                while list_users:
+                    for user in users:
+                        print(user.profile.first_name, user.profile.last_name + " - " + user.profile.login + " - " + user.id)
+
+                    if resp.has_next():
+                        users, err = await resp.next()
+                    else:
+                        list_users = False
+
+            elif "user" in line:
+                x = line.split()
+                user, resp, err = await client.get_user(x[1])
+
+                user_profile_model = models.user_profile
+
+                print(f"User profile for {user.profile.firstName} {user.profile.lastName}")
+                print("---")
+                for attribute in user_profile_model.UserProfile.BASIC_ATTRIBUTES:
+                    value = getattr(user.profile, attribute)
+                    if value is not None:
+                        print(f"{attribute}: {value}")
+
+            elif line == "app":
                 print("apps")
-            elif line == "groups":
+            elif line == "group":
                 print("groups")
             else:
                 print("Please specify what objects you would like to create.")
-                print("Valid options are 'users', 'groups', or 'apps'")
+                print("Valid options are 'user', 'group', or 'app'")
 
         asyncio.run(run())
 
