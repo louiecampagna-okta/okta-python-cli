@@ -44,20 +44,30 @@ class OktaCLI(cmd.Cmd):
                     if resp.has_next():
                         users, err = await resp.next()
                     else:
+                        print("")
                         list_users = False
 
             elif "user" in line:
                 x = line.split()
                 user, resp, err = await client.get_user(x[1])
 
-                user_profile_model = models.user_profile
+                if user is not None:
+                    print(f"User information for {user.profile.firstName} {user.profile.lastName}")
+                    print("---")
+                    print(f"ID: {user.id} | Status: {user.status}")
+                    print("")
 
-                print(f"User profile for {user.profile.firstName} {user.profile.lastName}")
-                print("---")
-                for attribute in user_profile_model.UserProfile.BASIC_ATTRIBUTES:
-                    value = getattr(user.profile, attribute)
-                    if value is not None:
-                        print(f"{attribute}: {value}")
+                    attribute = vars(user.profile)
+
+                    for a in attribute:
+                        value = getattr(user.profile, a)
+                        if value is not None:
+                            print(f"{a}: {value}")
+
+                    print("")
+                else:
+                    print(err)
+                    print("")
 
             elif line == "app":
                 print("apps")
@@ -65,7 +75,7 @@ class OktaCLI(cmd.Cmd):
                 print("groups")
             else:
                 print("Please specify what objects you would like to create.")
-                print("Valid options are 'user', 'group', or 'app'")
+                print("Valid options are 'user', 'group', or 'app'\n")
 
         asyncio.run(run())
 
@@ -77,40 +87,6 @@ class OktaCLI(cmd.Cmd):
                 schema, resp, error = await client.get_user_schema("default")
 
                 # default attributes
-                default_properties = [
-                    "first_name",
-                    "last_name",
-                    "email",
-                    "login",
-                    "middle_name",
-                    "honorific_prefix",
-                    "honorific_suffix",
-                    "title",
-                    "display_name",
-                    "nick_name",
-                    "profile_url",
-                    "second_email",
-                    "mobile_phone",
-                    "primary_phone",
-                    "street_address",
-                    "city",
-                    "state",
-                    "zip_code",
-                    "country_code",
-                    "postal_address",
-                    "preferred_language",
-                    "locale",
-                    "timezone",
-                    "user_type",
-                    "employee_number",
-                    "cost_center",
-                    "organization",
-                    "division",
-                    "department",
-                    "manager_id",
-                    "manager"
-                ]
-
                 default = {
                     "first_name": "firstName",
                     "last_name": "lastName",
@@ -148,7 +124,7 @@ class OktaCLI(cmd.Cmd):
                 set_attributes = {}
 
                 # set only required attributes
-                for item in default_properties:
+                for item in default.keys():
                     schema_property = (getattr(schema.definitions.base.properties, item))
 
                     if schema_property.required:
@@ -179,7 +155,7 @@ class OktaCLI(cmd.Cmd):
                         validate_input = True
 
                 if load_optional:
-                    for item in default_properties:
+                    for item in default.keys():
                         schema_property = (getattr(schema.definitions.base.properties, item))
 
                         if not schema_property.required:
@@ -203,9 +179,9 @@ class OktaCLI(cmd.Cmd):
                 response = await client.create_user(body)
 
                 try:
-                    print(f"Created user '{response[0].profile.login}' with ID {response[0].id}")
+                    print(f"Created user '{response[0].profile.login}' with ID {response[0].id}\n")
                 except Exception as error:
-                    print(response[2].message)
+                    print(response[2].message + "\n")
 
             elif line == "group":
                 print("group")
@@ -278,13 +254,14 @@ class OktaCLI(cmd.Cmd):
                 app, resp, err = await client.create_application(app_body)  # .create_application(appCreate)
 
                 if err != "None":
-                    print(f"Created app '{app.label}' with client ID {app.id}")
+                    print(f"Created app '{app.label}' with client ID {app.id}\n")
                 else:
                     print(err)
+                    print("")
 
             else:
                 print("Please specify what type of object you would like to create.")
-                print("Valid options are 'user', 'group', or 'app'")
+                print("Valid options are 'user', 'group', or 'app'\n")
 
         asyncio.run(run())
 
@@ -296,15 +273,15 @@ class OktaCLI(cmd.Cmd):
 def okta_login(args):
     authorizeUri = "https://" + oktaOrgUrl + "/oauth2/v1/device/authorize"
 
-    requestBody = {
+    request_body = {
         'client_id': clientId,
         'scope': 'openid okta.users.manage okta.apps.manage okta.groups.manage okta.schemas.manage'
     }
 
-    response = requests.post(authorizeUri, data=requestBody)
-    responseText = json.loads(response.text)
-    deviceUrl = responseText["verification_uri_complete"]
-    deviceCode = responseText["device_code"]
+    response = requests.post(authorizeUri, data=request_body)
+    response_text = json.loads(response.text)
+    deviceUrl = response_text["verification_uri_complete"]
+    deviceCode = response_text["device_code"]
 
     print(
         f'Open your browser and navigate to the following URL to begin the Okta device authorization for the Okta CLI: {deviceUrl}')
@@ -313,26 +290,26 @@ def okta_login(args):
 
     while True:
         try:
-            requestBody = {
+            request_body = {
                 'client_id': clientId,
                 'device_code': deviceCode,
                 'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
             }
 
-            response = requests.post("https://" + oktaOrgUrl + "/oauth2/v1/token", data=requestBody)
-            statusCode = response.status_code
-            if statusCode != 200:
+            response = requests.post("https://" + oktaOrgUrl + "/oauth2/v1/token", data=request_body)
+            status_code = response.status_code
+            if status_code != 200:
                 """Continue polling"""
             else:
-                responseText = json.loads(response.text)
-                accessToken = responseText["access_token"]
+                response_text = json.loads(response.text)
+                access_token = response_text["access_token"]
                 break
 
         except Exception as error:
             print(error)
             raise error
 
-    return accessToken
+    return access_token
 
 
 async def main():
