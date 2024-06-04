@@ -3,6 +3,7 @@ import argparse
 import requests
 import json
 import asyncio
+import time
 import os
 
 import okta.models as models
@@ -10,17 +11,18 @@ from okta.client import Client as OktaClient
 
 loop = asyncio.get_event_loop()
 
-oktaOrgUrl = ""
-clientId = ""
+oktaOrgUrl = None
+clientId = None
 client = OktaClient()
 
 
 def create_parser():
     parser = argparse.ArgumentParser(description="Okta Command Line Interface")
 
-    parser.add_argument('-l', '--login', metavar="", help='Log into your Okta org', required=True)
-    parser.add_argument('-c', '--clientId', metavar="", help="OIDC client ID for CLI app", required=True)
-
+    parser.add_argument('-l', '--login', metavar="", help='Log into your Okta org; specify your org URL', required=False)
+    parser.add_argument('-c', '--clientId', metavar="", help="OIDC client ID for CLI app; specify valid client ID", required=False)
+    parser.add_argument('-r', '--register', metavar="", help="Register for an Okta Developer org; specify your "
+                                                             "developer email address", required=False)
     return parser
 
 
@@ -320,10 +322,117 @@ async def main():
     global clientId
     global client
 
-    oktaOrgUrl = args.login
-    clientId = args.clientId
+    if args.register and (args.login or args.clientId):
+        parser.print_help()
+    elif args.register:
+        email = args.register
+        print(email)
 
-    if args.login:
+        first_name = input("First name: ")
+        last_name = input("Last name: ")
+        country = input("Country: ")
+
+        body = {
+            "userProfile": {
+                "firstName": first_name,
+                "lastName": last_name,
+                "email": email,
+                "country": country,
+                "okta_oie": True
+            }
+        }
+
+        bodyJSON = json.dumps(body)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+
+        reg_id = "reg405abrRAkn0TRf5d6"
+        reg_url = "https://okta-devok12.okta.com/api/v1/registration/" + reg_id + "/register"
+        response = requests.post(reg_url, data=bodyJSON, headers=headers)
+
+        response_text = json.loads(response.text)
+
+        try:
+            devorg_token = response_text["developerOrgCliToken"]
+
+            devorg_url = "https://okta-devok12.okta.com/api/internal/v1/developer/redeem/" + devorg_token
+            response = requests.get(devorg_url)
+
+            response_text = json.loads(response.text)
+
+            try:
+                status = response_text["status"]
+
+                print("Creating new Okta Organization, this may take a minute...")
+                print("An account activation email has been sent to you")
+                print("Check your email to continue...")
+
+                while status == "PENDING":
+                    time.sleep(4)
+                    response = requests.get(devorg_url)
+                    response_text = json.loads(response.text)
+                    status = response_text["status"]
+
+                    if status != "PENDING":
+                        api_token = response_text["apiToken"]
+                        dev_org = response_text["orgUrl"]
+
+                        app_grant = ["authorization_code", "urn:ietf:params:oauth:grant-type:device_code"]
+                        app_response_type = ["code"]
+
+                        app_body = {
+                            "name": "oidc_client",
+                            "label": "Okta CLI",
+                            "signOnMode": "OPENID_CONNECT",
+                            "credentials": {
+                                "oauthClient": {
+                                    "token_endpoint_auth_method": "none"
+                                }
+                            },
+                            "settings": {
+                                "oauthClient": {
+                                    "redirect_uris": [
+                                        "com.okta.developer://callback"
+                                    ],
+                                    "response_types": app_response_type,
+                                    "grant_types": app_grant,
+                                    "application_type": "NATIVE"
+                                }
+                            }
+                        }
+                        config = {
+                            'authorizationMode': 'SSWS',
+                            'orgUrl': dev_org,
+                            'token': api_token
+                        }
+
+                        print("Creating CLI app...")
+                        client = OktaClient(config)
+                        app, resp, err = await client.create_application(app_body)
+
+                        # to-do: assign Okta API scopes and assign to admin user
+                        client = None
+
+                        print(f"New Okta Account created!\nYour Okta Domain: {dev_org}\nYour CLI Client ID: {app.id}"
+                              f"\nPlease relaunch the CLI and specify your org and client ID to authenticate.")
+
+            except Exception:
+                print("Failed to create Okta Organization. You can register manually by going to "
+                      "https://developer.okta.com/signup")
+
+        except Exception:
+            error_causes = response_text["errorCauses"]
+            print(error_causes)
+            print("Failed to create Okta Organization. You can register manually by going to "
+                  "https://developer.okta.com/signup")
+
+    elif args.login and args.clientId:
+        oktaOrgUrl = args.login
+        clientId = args.clientId
+
         token = okta_login(args.login)
 
         config = {
@@ -333,11 +442,11 @@ async def main():
         }
 
         client = OktaClient(config)
-
     else:
         parser.print_help()
 
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(main())
-    OktaCLI().cmdloop()
+    if oktaOrgUrl is not None:
+        OktaCLI().cmdloop()
