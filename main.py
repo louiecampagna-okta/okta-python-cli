@@ -28,13 +28,17 @@ def create_parser():
 
 class OktaCLI(cmd.Cmd):
     prompt = '>>'
-    intro = 'Welcome to the Okta CLI. Type \'help\' for available commands'
+    intro = '\nWelcome to the Okta CLI. Type \'help\' for available commands'
 
     def do_list(self, line):
         """List objects in your org; valid options are users, groups, or apps"""
 
         async def run():
-            if line == "user all":
+            if line == "user":
+                print("Proper syntax is 'list user all' or 'list user userIdentifier' - the user identifier can be "
+                      "the unique ID or username of the user")
+            elif line == "user all":
+                print("")
                 query_parameters = {'limit': '200'}
                 users, resp, err = await client.list_users(query_parameters)
 
@@ -50,10 +54,11 @@ class OktaCLI(cmd.Cmd):
                         list_users = False
 
             elif "user" in line:
+                print("")
                 x = line.split()
                 user, resp, err = await client.get_user(x[1])
 
-                if user is not None:
+                try:
                     print(f"User information for {user.profile.firstName} {user.profile.lastName}")
                     print("---")
                     print(f"ID: {user.id} | Status: {user.status}")
@@ -67,16 +72,101 @@ class OktaCLI(cmd.Cmd):
                             print(f"{a}: {value}")
 
                     print("")
-                else:
-                    print(err)
-                    print("")
+                except Exception:
+                    print(err.message)
 
             elif line == "app":
-                print("apps")
+                print("Proper syntax is 'list app all' or 'list app appIdentifier' - the app identifier is the "
+                      "the unique ID of the app (ex: 0oahj8jgm39sTthic5d7")
+            elif line == "app all":
+                print("")
+                query_parameters = {'limit': '200'}
+                apps, resp, err = await client.list_applications(query_parameters)
+
+                list_apps = True
+                while list_apps:
+                    for app in apps:
+                        print(app.label + " - " + app.id)
+
+                    if resp.has_next():
+                        apps, err = await resp.next()
+                    else:
+                        print("")
+                        list_apps = False
+
+            elif "app" in line:
+                x = line.split()
+
+                app, resp, err = await client.get_application(x[1])
+
+                try:
+                    print("")
+                    print(f"Application information for {app.label}")
+                    print("---")
+
+                    print(f"ID: {app.id}")
+                    print(f"Status: {app.status}")
+                    print(f"Created: {app.created}")
+                    print(f"Sign-on Mode: {app.sign_on_mode}")
+                    print("")
+
+                except Exception:
+                    print(err.message)
+
             elif line == "group":
-                print("groups")
+                print("Proper syntax is 'list group all' or 'list user groupIdentifier' - the group identifier is the "
+                      "the unique ID of the group (ex: 00ghjamc0wdUHSI8B5d7")
+            elif line == "group all":
+                print("")
+                query_parameters = {'limit': '200'}
+                groups, resp, err = await client.list_groups(query_parameters)
+
+                list_groups = True
+                while list_groups:
+                    for group in groups:
+                        print(group.profile.name + " - " + group.id)
+
+                    if resp.has_next():
+                        groups, err = await resp.next()
+                    else:
+                        print("")
+                        list_groups = False
+
+            elif "group" in line:
+                x = line.split()
+
+                group, resp, err = await client.get_group(x[1])
+
+                try:
+                    print("")
+                    print(f"Group membership for {group.profile.name}")
+                    print("---")
+
+                    membership_href = group.links
+                    url = membership_href["users"]["href"]
+
+                    request, error = await client.get_request_executor().create_request(
+                        method='GET',
+                        url=url,
+                        body={},
+                        headers={},
+                        oauth=False
+                    )
+
+                    response, error = await client.get_request_executor().execute(request, models.User)
+                    members = (response.get_body())
+
+                    for member in members:
+                        print(f"{member['profile']['firstName']} {member['profile']['lastName']} - {member['profile']['login']} ")
+
+                    print("")
+                except Exception:
+                    print("")
+                    print(err.message)
+
             else:
-                print("Please specify what objects you would like to create.")
+                print(line)
+                print("Please specify what objects you would like to list.")
                 print("Valid options are 'user', 'group', or 'app'\n")
 
         asyncio.run(run())
@@ -85,7 +175,14 @@ class OktaCLI(cmd.Cmd):
         """Create objects in your org; valid options are user, group, or app"""
 
         async def run():
-            if line == "user":
+            if "user" in line:
+                email = None
+
+                x = line.split()
+
+                if len(x) > 1:
+                    email = x[1]
+
                 schema, resp, error = await client.get_user_schema("default")
 
                 # default attributes
@@ -125,12 +222,20 @@ class OktaCLI(cmd.Cmd):
 
                 set_attributes = {}
 
-                # set only required attributes
+                print("")
+
+                # set required attributes
                 for item in default.keys():
                     schema_property = (getattr(schema.definitions.base.properties, item))
 
                     if schema_property.required:
-                        set_value = input(schema_property.title + ": ")
+                        if item == "email" and email is not None:
+                            set_value = email
+                        elif item == "login" and email is not None:
+                            set_value = email
+                        else:
+                            set_value = input(schema_property.title + ": ")
+
                         set_attributes[default[item]] = set_value
 
                 for item in schema.definitions.custom.properties.keys():
@@ -140,6 +245,7 @@ class OktaCLI(cmd.Cmd):
                         if schema_property["required"]:
                             set_value = input(schema_property["title"] + ": ")
                             set_attributes[item] = set_value
+
                     except Exception:
                         pass
 
@@ -181,12 +287,43 @@ class OktaCLI(cmd.Cmd):
                 response = await client.create_user(body)
 
                 try:
-                    print(f"Created user '{response[0].profile.login}' with ID {response[0].id}\n")
+                    print(f"\nCreated user '{response[0].profile.login}' with ID {response[0].id}\n")
                 except Exception as error:
-                    print(response[2].message + "\n")
+                    print("")
+                    print(response[2].message)
 
-            elif line == "group":
-                print("group")
+            elif "group" in line:
+                print("")
+                x = line.split()
+
+                group_name = None
+
+                if len(x) > 1:
+                    for item in x:
+                        if item != "group":
+                            if group_name is None:
+                                group_name = item
+                            else:
+                                group_name = group_name + " " + item
+
+                if group_name is None:
+                    group_name = input("Group Name: ")
+
+                group_profile = models.GroupProfile({
+                    'name': group_name
+                })
+                group_model = models.Group({
+                    'profile': group_profile
+                })
+
+                group, resp, err = await client.create_group(group_model)
+
+                try:
+                    print(f"Group '{group.profile.name}' created with ID {group.id}")
+                except Exception:
+                    print("")
+                    print(err.message)
+
             elif line == "app":
                 app_name = input('Application name: ')
 
@@ -255,10 +392,11 @@ class OktaCLI(cmd.Cmd):
 
                 app, resp, err = await client.create_application(app_body)  # .create_application(appCreate)
 
-                if err != "None":
+                try:
                     print(f"Created app '{app.label}' with client ID {app.id}\n")
-                else:
-                    print(err)
+                except Exception:
+                    print("")
+                    print(err.message)
                     print("")
 
             else:
@@ -277,7 +415,7 @@ def okta_login(args):
 
     request_body = {
         'client_id': clientId,
-        'scope': 'openid okta.users.manage okta.apps.manage okta.groups.manage okta.schemas.manage'
+        'scope': 'openid okta.users.manage okta.apps.manage okta.groups.manage okta.schemas.read'
     }
 
     response = requests.post(authorizeUri, data=request_body)
@@ -409,15 +547,105 @@ async def main():
                             'token': api_token
                         }
 
-                        print("Creating CLI app...")
+                        print("Creating CLI app...\n\n")
                         client = OktaClient(config)
                         app, resp, err = await client.create_application(app_body)
 
-                        # to-do: assign Okta API scopes and assign to admin user
+                        body = {
+                            "issuer": dev_org,
+                            "scopeId": "okta.apps.manage"
+                        }
+
+                        request, error = await client.get_request_executor().create_request(
+                            method='POST',
+                            url='/api/v1/apps/' + app.id + '/grants',
+                            body=body,
+                            headers={},
+                            oauth=False
+                        )
+
+                        response, error = await client.get_request_executor().execute(request, None)
+                        response_body = response.get_body()
+
+                        body = {
+                            "issuer": dev_org,
+                            "scopeId": "okta.users.manage"
+                        }
+
+                        request, error = await client.get_request_executor().create_request(
+                            method='POST',
+                            url='/api/v1/apps/' + app.id + '/grants',
+                            body=body,
+                            headers={},
+                            oauth=False
+                        )
+
+                        response, error = await client.get_request_executor().execute(request, None)
+                        response_body = response.get_body()
+
+                        body = {
+                            "issuer": dev_org,
+                            "scopeId": "okta.groups.manage"
+                        }
+
+                        request, error = await client.get_request_executor().create_request(
+                            method='POST',
+                            url='/api/v1/apps/' + app.id + '/grants',
+                            body=body,
+                            headers={},
+                            oauth=False
+                        )
+
+                        response, error = await client.get_request_executor().execute(request, None)
+                        response_body = response.get_body()
+
+                        body = {
+                            "issuer": dev_org,
+                            "scopeId": "okta.schemas.read"
+                        }
+
+                        request, error = await client.get_request_executor().create_request(
+                            method='POST',
+                            url='/api/v1/apps/' + app.id + '/grants',
+                            body=body,
+                            headers={},
+                            oauth=False
+                        )
+
+                        response, error = await client.get_request_executor().execute(request, None)
+                        response_body = response.get_body()
+
+                        user, resp, err = await client.get_user(email)
+
+                        body = {
+                            "id": user.id,
+                            "credentials": {
+                                "userName": email
+                            },
+                            "profile": {
+                                "country": country,
+                                "given_name": first_name,
+                                "name": first_name + " " + last_name,
+                                "family_name": last_name,
+                                "email": email
+                            }
+                        }
+
+                        request, error = await client.get_request_executor().create_request(
+                            method='POST',
+                            url='/api/v1/apps/' + app.id + '/users',
+                            body=body,
+                            headers={},
+                            oauth=False
+                        )
+
+                        response, error = await client.get_request_executor().execute(request, None)
+                        response_body = response.get_body()
+
                         client = None
 
                         print(f"New Okta Account created!\nYour Okta Domain: {dev_org}\nYour CLI Client ID: {app.id}"
-                              f"\nPlease relaunch the CLI and specify your org and client ID to authenticate.")
+                              f"\n\nPlease relaunch the CLI and specify your org and client ID to authenticate.")
 
             except Exception:
                 print("Failed to create Okta Organization. You can register manually by going to "
