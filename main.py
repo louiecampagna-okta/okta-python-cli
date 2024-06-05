@@ -36,7 +36,7 @@ class OktaCLI(cmd.Cmd):
         async def run():
             if line == "user":
                 print("Proper syntax is 'list user all' or 'list user userIdentifier' - the user identifier can be "
-                      "the unique ID or username of the user")
+                      "the unique ID or username of the user\n")
             elif line == "user all":
                 print("")
                 query_parameters = {'limit': '200'}
@@ -77,7 +77,7 @@ class OktaCLI(cmd.Cmd):
 
             elif line == "app":
                 print("Proper syntax is 'list app all' or 'list app appIdentifier' - the app identifier is the "
-                      "the unique ID of the app (ex: 0oahj8jgm39sTthic5d7")
+                      "the unique ID of the app (ex: 0oahj8jgm39sTthic5d7)\n")
             elif line == "app all":
                 print("")
                 query_parameters = {'limit': '200'}
@@ -115,7 +115,7 @@ class OktaCLI(cmd.Cmd):
 
             elif line == "group":
                 print("Proper syntax is 'list group all' or 'list user groupIdentifier' - the group identifier is the "
-                      "the unique ID of the group (ex: 00ghjamc0wdUHSI8B5d7")
+                      "the unique ID of the group (ex: 00ghjamc0wdUHSI8B5d7)\n")
             elif line == "group all":
                 print("")
                 query_parameters = {'limit': '200'}
